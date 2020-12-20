@@ -19,6 +19,13 @@ let games = []
 const FinnishTurn = (game) => {
   clearInterval(game.interval)
 
+  const quessedPlayers = game.players.filter(p => p.guessedCurrent).length
+  if (quessedPlayers / (game.players.length - 1) > 0.49) {
+    const drawer = game.players.find(p => p.id === game.turnPlayer)
+    drawer.pointsCurrentRound = Math.ceil(game.players.length / 2)
+    drawer.pointsTotal += drawer.pointsCurrentRound
+  }
+
   const nextPlayer = game.players[game.players.map(p => p.id).indexOf(game.turnPlayer) + 1]
 
   if (nextPlayer) {
@@ -33,6 +40,11 @@ const FinnishTurn = (game) => {
 
 const emitPubilcGameInfo = (io, game) => {
   const {currentWord, interval, ...publicGame} = game
+  io.to(game.id).emit("gameInfo", publicGame)
+}
+
+const emitGameInfoWithWord = (io, game) => {
+  const {interval, ...publicGame} = game
   io.to(game.id).emit("gameInfo", publicGame)
 }
 
@@ -66,8 +78,10 @@ io.on("connection", (socket) => {
         player.pointsTotal += player.pointsCurrentRound
         if (game.players.length  === quessedPlayers + 1) {
           FinnishTurn(game)
+          emitGameInfoWithWord(io, game)
+        } else {
+          emitPubilcGameInfo(io, game)
         }
-        emitPubilcGameInfo(io, game)
         io.to(socket.gameRoom).emit("mes", {message: "ARVASI SANAN OIKEIN", from: socket.username})
       }
     } else {
@@ -102,9 +116,11 @@ io.on("connection", (socket) => {
     }
     const game = games.find(g => g.id === socket.gameRoom)
 
-    if (game.turnIndex >= game.maxTurns || game.turnPlayer !== socket.id) {
+    if (game.turnIndex >= game.maxTurns + 1 || game.turnPlayer !== socket.id) {
       return null
     }
+
+    game.players = game.players.map(p => ({...p, guessedCurrent: false, pointsCurrentRound: 0}))
     game.currentWord = word
     game.timeLeft = game.timeLimit
     io.to(socket.gameRoom).emit("clear")
@@ -119,9 +135,18 @@ io.on("connection", (socket) => {
     setTimeout(() => {
       if (!game.interval._destroyed) { // jos kaikki arvanneet ennen ajan loppua
         FinnishTurn(game)
-        emitPubilcGameInfo(io, game)
+        emitGameInfoWithWord(io, game)
       }
     }, (game.timeLimit) * 1000)
+  })
+
+  socket.on("start", () => {
+    const game = games.find(g => g.id === socket.gameRoom)
+    console.log('here')
+    if (socket.id === game.turnPlayer && game.turnIndex === 1) {
+      game.started = true
+      emitPubilcGameInfo(io, game) 
+    }
   })
 
   socket.on("startOver", () => {
@@ -156,7 +181,7 @@ io.on("connection", (socket) => {
 	})
 
   socket.on("createGame", (data) => {
-    if (!data.name && !data.timeLimit && !data.maxTurns) {
+    if (!data.name || !data.timeLimit || !data.maxTurns) {
       return null
     }
     const game = {
@@ -168,6 +193,7 @@ io.on("connection", (socket) => {
       timeLimit: data.timeLimit,
       timeLeft: 0,
       maxTurns: data.maxTurns,
+      started: false,
       interval: null
     }
 
