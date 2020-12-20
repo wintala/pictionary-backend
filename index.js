@@ -8,7 +8,7 @@ app.use(cors())
 const server = http.createServer(app)
 const io = socketio(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: "http://localhost:3001",
     methods: ["GET", "POST"]
   }
 })
@@ -202,9 +202,9 @@ io.on("connection", (socket) => {
     socket.gameRoom = socket.id
     emitPubilcGameInfo(io, game)
 	})
-	
 })
 
+app.use(express.static("build"))
 const PORT = 3001 || process.env.PORT
 
 server.listen(PORT, () => console.log("SERVER RUNNING"))  
