@@ -2,6 +2,7 @@ const express = require("express")
 var cors = require('cors')
 const http = require("http")
 const socketio = require('socket.io')
+const wordlist = require("./words.js")
 
 const app = express()
 app.use(cors())
@@ -111,9 +112,6 @@ io.on("connection", (socket) => {
   })
 
   socket.on("nextTurn", (word) => {
-    if (!word) {
-      return null
-    }
     const game = games.find(g => g.id === socket.gameRoom)
 
     if (game.turnIndex >= game.maxTurns + 1 || game.turnPlayer !== socket.id) {
@@ -121,7 +119,16 @@ io.on("connection", (socket) => {
     }
 
     game.players = game.players.map(p => ({...p, guessedCurrent: false, pointsCurrentRound: 0}))
-    game.currentWord = word
+
+    if (!word) {
+      game.currentWord = wordlist.words[Math.floor(Math.random() * wordlist.words.length)]
+    } else {
+      game.currentWord = word
+    }
+    socket.emit("word", game.currentWord)
+    const wordHint = game.currentWord.split("").map(char => char === " " ? "  " : "_ ").join("")
+    socket.to(socket.gameRoom).emit("word", wordHint)
+
     game.timeLeft = game.timeLimit
     io.to(socket.gameRoom).emit("clear")
     emitPubilcGameInfo(io, game)
@@ -152,7 +159,7 @@ io.on("connection", (socket) => {
   socket.on("startOver", () => {
     const game = games.find(g => g.id === socket.gameRoom)
 
-    if (game.turnIndex !== game.maxTurns) {
+    if (game.turnIndex !== game.maxTurns + 1) {
       return null
     }
     game.players = game.players.map(p => ({...p, pointsTotal:0, pointsCurrentRound: 0, guessedCurrent: false}))
